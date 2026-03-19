@@ -35,3 +35,4 @@ Seed a few rows so `/api/dashboard` can return examples.
 - `src/styles/globals.css` provides the fintech visual tokens.
 
 This gives you a N ext.js/Node.js foundation. Let me know when you’re ready to wire in real auth, payment APIs, or the Expo mobile version.
+# am-global-web
