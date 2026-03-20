@@ -137,17 +137,21 @@ export default async function handler(req, res) {
         [createdUser.rows[0].id, sessionToken, maxAge]
       );
 
-      await provisionVirtualAccountForUser({
-        user: {
-          id: createdUser.rows[0].id,
-          username: createdUser.rows[0].username,
-          full_name: createdUser.rows[0].full_name,
-          email: createdUser.rows[0].email,
-          bvn: normalizedBvn,
-          nin: normalizedNin,
-        },
-        client,
-      });
+      try {
+        await provisionVirtualAccountForUser({
+          user: {
+            id: createdUser.rows[0].id,
+            username: createdUser.rows[0].username,
+            full_name: createdUser.rows[0].full_name,
+            email: createdUser.rows[0].email,
+            bvn: normalizedBvn,
+            nin: normalizedNin,
+          },
+          client,
+        });
+      } catch (virtualAccountError) {
+        console.error('Virtual account provisioning failed during registration', virtualAccountError);
+      }
 
       await client.query('COMMIT');
 
@@ -164,6 +168,22 @@ export default async function handler(req, res) {
     }
   } catch (error) {
     console.error('Register error', error);
+    if (error?.message?.includes('DATABASE_URL is not configured')) {
+      return res.status(500).json({ error: 'Database is not configured on the server.' });
+    }
+
+    if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+      return res.status(500).json({ error: 'Database connection failed.' });
+    }
+
+    if (error?.code === '28P01') {
+      return res.status(500).json({ error: 'Database authentication failed.' });
+    }
+
+    if (error?.code === '3D000') {
+      return res.status(500).json({ error: 'Database does not exist.' });
+    }
+
     return res.status(500).json({ error: 'Unable to create account right now.' });
   }
 }
