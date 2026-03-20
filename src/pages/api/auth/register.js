@@ -92,6 +92,8 @@ export default async function handler(req, res) {
     }
 
     const client = await getClient();
+    let releasedClient = false;
+    let createdUserRecord = null;
 
     try {
       await client.query('BEGIN');
@@ -125,6 +127,7 @@ export default async function handler(req, res) {
           normalizedNin,
         ]
       );
+      createdUserRecord = createdUser.rows[0];
 
       const sessionToken = createSessionToken();
       const maxAge = getSessionMaxAge(false);
@@ -134,37 +137,40 @@ export default async function handler(req, res) {
           INSERT INTO sessions (user_id, token, expires_at)
           VALUES ($1, $2, NOW() + ($3 * INTERVAL '1 second'))
         `,
-        [createdUser.rows[0].id, sessionToken, maxAge]
+        [createdUserRecord.id, sessionToken, maxAge]
       );
+
+      await client.query('COMMIT');
+      client.release();
+      releasedClient = true;
 
       try {
         await provisionVirtualAccountForUser({
           user: {
-            id: createdUser.rows[0].id,
-            username: createdUser.rows[0].username,
-            full_name: createdUser.rows[0].full_name,
-            email: createdUser.rows[0].email,
+            id: createdUserRecord.id,
+            username: createdUserRecord.username,
+            full_name: createdUserRecord.full_name,
+            email: createdUserRecord.email,
             bvn: normalizedBvn,
             nin: normalizedNin,
           },
-          client,
         });
       } catch (virtualAccountError) {
         console.error('Virtual account provisioning failed during registration', virtualAccountError);
       }
 
-      await client.query('COMMIT');
-
       res.setHeader('Set-Cookie', serializeSessionCookie(sessionToken, maxAge));
       return res.status(201).json({
         message: 'Account created successfully.',
-        user: createdUser.rows[0],
+        user: createdUserRecord,
       });
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
-      client.release();
+      if (!releasedClient) {
+        client.release();
+      }
     }
   } catch (error) {
     console.error('Register error', error);
